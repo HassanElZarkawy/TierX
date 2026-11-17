@@ -40,7 +40,10 @@ docker compose -f compose.all-in-one.yaml up -d
 
 The helper writes `.env` with generated secrets (file mode 0600) and pins the
 release. Without Node, copy `.env.example` to `.env` and fill in the secrets
-yourself. Use an exact release tag that includes the installer; older images
+yourself, and set `TIERX_RELEASE` to its numeric release tag without `v` (for
+example `0.2.11`). Required generated secrets are `TIERX_MONGO_ROOT_PASSWORD`,
+`TIERX_JWT_SECRET_KEY` and `TIERX_WEBHOOK_SECRET_ENCRYPTION_KEY`.
+Use an exact release tag that includes the installer; older images
 such as v0.2.0 do not. The all-in-one variant wants at least 4 CPU cores,
 12 GiB RAM and 30 GiB of free disk. The external-Ollama topology,
 environment-only bootstrap, model digest pinning, HTTPS, backups and upgrades
@@ -50,8 +53,8 @@ are covered in [`examples/usage/README.md`](examples/usage/README.md).
 
 A fresh deployment starts uninstalled: normal APIs answer
 `503 INSTALLATION_REQUIRED` and the processing services wait. Open
-`/installation`, copy the one-time setup token from the backend logs
-(`docker compose logs backend`), choose the first administrator and the
+`http://localhost:8080/installation`, copy the one-time setup token from the backend logs
+(`docker compose -f compose.all-in-one.yaml logs backend`), choose the first administrator and the
 product settings, then complete the wizard. The installer closes afterwards
 and rejects further writes. Setting `TIERX_BOOTSTRAP_CONFIGURED=true` together
 with the administrator, public URL and Ollama values installs from environment
@@ -62,7 +65,7 @@ specified in
 ### From source (developer setup)
 
 The local development workflow is wrapped in the provided `Makefile`. You
-need Docker running, Compose v2.20+, and enough free disk and memory for the
+need Docker running, Compose v5.2.0 or newer, and enough free disk and memory for the
 Ollama model downloads (8 GiB or more for Docker). CI exercises the manifests
 against Compose v5.2.0; older releases have evaluated the nested environment
 fallbacks in `compose.yaml` incorrectly, so keep Compose current.
@@ -119,18 +122,23 @@ The base `compose.yaml` defines the following services:
 - `ingestion-proxy` — retained transport service; legacy ingestion endpoints
   return `410`. Send new alerts through fixed workflow ingestion URLs
 - `knowledge-base-processor` — background processor for Knowledge Base uploads
-- `kb-semantic` — optional semantic Knowledge Base indexing service
+- `kb-semantic` — semantic Knowledge Base indexing service (retrieval/indexing
+  flags default to false, but this source-stack container starts normally)
 - `mongodb`, `kafka`, `ollama`, `qdrant` — persistence, event topics, local
   LLM serving, and the vector store behind the optional semantic KB
 - `init` — one-off job that checks Ollama and pulls the configured model on
   first startup
+
+The released-image examples instead name the initialization job `model-init`
+and start semantic services only with `--profile semantic`.
 
 ## Configuration
 
 Environment resolution prefers canonical `TIERX_*` names, then unprefixed
 names, then legacy `SOC_MIND_*` aliases; see
 [`docs/tierx-compatibility.md`](docs/tierx-compatibility.md). The variables
-that matter most for a local setup:
+that matter most for a local source setup are below. Released-image installs
+use the canonical `TIERX_*` variables documented in `examples/usage/.env.example`.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -142,7 +150,7 @@ that matter most for a local setup:
 | `WEBHOOK_SECRET_ENCRYPTION_KEY` | empty | 32 random bytes as base64url; needed for playbook webhooks |
 | `PYTHON_ENV` | `development` | Backend environment hint |
 | `OLLAMA_MODEL` | `phi3:latest` | Model pulled by the init container |
-| `OLLAMA_MODEL_DIGEST` | pinned `phi3` digest | Rejects a tag whose digest differs |
+| `OLLAMA_MODEL_DIGEST` | pinned `phi3` digest | Preflight and analysis reject digest mismatch; init may pull the tag |
 | `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | Frontend API base URL |
 
 Generate the webhook key with
@@ -174,7 +182,8 @@ Once the stack is up, the main endpoints are:
 - Backend health check: `http://localhost:8000/api/v1/health`
 - Ingestion proxy: `http://localhost:8001`
 - MongoDB: `localhost:27017`
-- Kafka: `localhost:9092`
+- Kafka (Docker-network clients): `kafka:9092`; the published localhost port is
+  not a supported host-client endpoint because Kafka advertises its internal name
 - Ollama API: `http://localhost:11434`
 
 ## Common Commands
@@ -190,7 +199,7 @@ make logs      # Follow logs from all services
 make build     # Rebuild local images
 make status    # Show container status
 make config    # Print merged Docker Compose config
-make clean     # Stop the stack and remove volumes
+make clean CONFIRM=destroy # Destructively remove stack volumes
 ```
 
 Run the implemented checks:
@@ -235,6 +244,8 @@ This uses `compose.yaml` together with `compose.prod.yaml`. In that mode:
 
 This profile is meant for local production-style trials. Customer-operated
 installations should use the released-image setup described above.
+It is not a production-ready networking configuration: the frontend binds on all
+interfaces, and the browser API URL must be made reachable explicitly.
 
 ## Stopping and Resetting
 
