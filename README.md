@@ -10,11 +10,12 @@ Copyright © 2026 SAMIMI Tech Consulting GmbH.
 
 The Jira integration is documented in
 [`integrations/jira-forge/README.md`](integrations/jira-forge/README.md). It
-routes one raw alert from a Jira project into a configured tenant, source
-system, and alert type while keeping the ingestion proxy private.
-The new platform-managed graph runtime, fixed workflow URLs, nested playbooks,
+routes one raw alert into an explicitly configured workflow URL while keeping
+the ingestion proxy private.
+The platform-managed graph runtime, fixed workflow URLs, nested playbooks,
 agents, and REST/MCP tools are documented in [Workflow Studio](docs/workflows.md).
-It is disabled by default pending an explicit installation cutover.
+Workflows are the only execution system; an administrator must publish a workflow
+and grant its tenant access before sending alerts. No default workflow is seeded.
 
 ## Installation
 
@@ -113,10 +114,10 @@ The base `compose.yaml` defines the following services:
   playbooks, knowledge base, admin settings)
 - `backend` — FastAPI service with authentication, the installation and
   platform settings APIs, and tenant and alert handling
-- `pipeline` — Kafka consumers that validate, normalize, enrich, cluster and
-  deduplicate alerts, plus the workflow engine
-- `ingestion-proxy` — authenticated HTTP entry point for external alert
-  sources, publishing to Kafka
+- `pipeline` — durable workflow scheduler executing the published graph's
+  validation, mapping, deduplication, correlation and analysis nodes
+- `ingestion-proxy` — retained transport service; legacy ingestion endpoints
+  return `410`. Send new alerts through fixed workflow ingestion URLs
 - `knowledge-base-processor` — background processor for Knowledge Base uploads
 - `kb-semantic` — optional semantic Knowledge Base indexing service
 - `mongodb`, `kafka`, `ollama`, `qdrant` — persistence, event topics, local
